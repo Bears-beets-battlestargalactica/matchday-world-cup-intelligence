@@ -7,6 +7,40 @@
 ![Model](https://img.shields.io/badge/model-Elo%20%2B%20Poisson-6D5DFB)
 ![Database](https://img.shields.io/badge/leaderboard-Supabase%20Postgres-3ECF8E?logo=supabase&logoColor=white)
 
+---
+
+## Preview
+
+### Dashboard
+
+![Matchday dashboard](docs/screenshots/dashboard.jpeg)
+
+### Match Center
+
+![Match center](docs/screenshots/match-center.jpeg)
+
+### Group Scenarios
+
+![Group scenarios](docs/screenshots/group-scenarios.jpeg)
+
+### Bracketology Lab
+
+![Bracketology lab](docs/screenshots/bracketology.jpeg)
+
+### Tournament Challenge
+
+![Tournament challenge](docs/screenshots/tournament-challenge.jpeg)
+
+### Player Guide
+
+![Player guide](docs/screenshots/player-guide.jpeg)
+
+### Player Rating Snapshot
+
+![Player guide rating snapshot](docs/screenshots/player-guide-rating.jpeg)
+
+---
+
 ## Why this exists
 
 World Cup predictions are usually presented as a single magic percentage. Matchday takes a more useful approach: it shows the forecast, explains the uncertainty, lets fans make their own calls, and keeps player context separate from the prediction model.
@@ -164,26 +198,6 @@ Never commit `.env`. It is ignored by Git on purpose. The public browser never r
 
 More detail: [DEPLOY_RENDER.md](DEPLOY_RENDER.md).
 
-## Screenshot checklist for GitHub
-
-For a strong portfolio README, take these screenshots at desktop width (around 1440px wide), with real provider data loaded and no browser chrome visible:
-
-| Filename | What to capture | Why it matters |
-| --- | --- | --- |
-| `01-dashboard.png` | Main dashboard with upcoming matches, live data badge, group standings, and AI analyst box. | The one image that sells the project instantly. |
-| `02-match-guide.png` | An opened match guide showing forecast, expected goals, recent form, and players to watch. | Demonstrates depth beyond a simple win percentage. |
-| `03-player-guide.png` | Player Guide with a squad loaded and one player’s 2026 rating/stat card open. | Proves the provider integration and transparent player-data treatment. |
-| `04-bracketology.png` | Bracketology lab after you have selected a few winners. | Shows the playful, interactive side. |
-| `05-leaderboard.png` | Fan leaderboard with a few test nicknames and points. | Shows that the project has a community feature and persistent data. |
-| `06-mobile.png` | A narrow mobile screenshot of the dashboard or Match Center. | Shows responsive polish. |
-
-Create a `docs/screenshots/` folder, save the images using those names, and then add them near the top of this README, for example:
-
-```md
-![Matchday dashboard](docs/screenshots/01-dashboard.png)
-```
-
-Avoid screenshots containing API keys, database URLs, terminal output, your personal email address, or the Render environment screen.
 
 ## Roadmap ideas
 
