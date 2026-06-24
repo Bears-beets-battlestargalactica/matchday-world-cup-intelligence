@@ -2,6 +2,7 @@ services:
   - type: web
     runtime: python
     name: matchday-world-cup-intelligence
+    plan: free
     buildCommand: pip install -r backend/requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
