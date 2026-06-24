@@ -1,6 +1,9 @@
 # Matchday — World Cup Intelligence
 
 > A playful, data-aware World Cup companion: forecast matches, build a route to the final, inspect the groups, challenge your friends, and ask an AI analyst why the model leans one way.
+**Live Demo:** [https://matchday-world-cup-intelligence.onrender.com](https://matchday-world-cup-intelligence.onrender.com)
+**GitHub Repository:** [https://github.com/Bears-beets-battlestargalactica/matchday-world-cup-intelligence](https://github.com/Bears-beets-battlestargalactica/matchday-world-cup-intelligence)
+> > The public demo is hosted on Render’s free tier, so the first request may take a little while to wake up after inactivity.
 
 ![Python](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)
 ![Frontend](https://img.shields.io/badge/frontend-vanilla%20HTML%20%2B%20JS-F7DF1E?logo=javascript&logoColor=111)
@@ -98,7 +101,7 @@ Player ratings are only shown when the provider has a recorded 2026 tournament a
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YOUR-GITHUB-USERNAME/matchday-world-cup-intelligence.git
+git clone https://github.com/Bears-beets-battlestargalactica/matchday-world-cup-intelligence.git
 cd matchday-world-cup-intelligence
 
 python3 -m venv .venv
