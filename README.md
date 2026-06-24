@@ -1,62 +1,31 @@
 # Matchday — World Cup Intelligence
 
-> A World Cup companion built for fans who love the game, the numbers, the uncertainty, and the chaos that makes football beautiful.
-
-**Live Demo:**  
-https://matchday-world-cup-intelligence.onrender.com
-
-**GitHub Repository:**  
-https://github.com/Bears-beets-battlestargalactica/matchday-world-cup-intelligence
-
-> The public demo is hosted on Render’s free tier, so the first request may take a little while to wake up after inactivity.
+> A playful, data-aware World Cup companion: forecast matches, build a route to the final, inspect the groups, challenge your friends, and ask an AI analyst why the model leans one way.
 
 ![Python](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)
 ![Frontend](https://img.shields.io/badge/frontend-vanilla%20HTML%20%2B%20JS-F7DF1E?logo=javascript&logoColor=111)
 ![Model](https://img.shields.io/badge/model-Elo%20%2B%20Poisson-6D5DFB)
 ![Database](https://img.shields.io/badge/leaderboard-Supabase%20Postgres-3ECF8E?logo=supabase&logoColor=white)
-![Deploy](https://img.shields.io/badge/deploy-Render-46E3B7?logo=render&logoColor=white)
 
----
+## Why this exists
 
-## About the Project
+World Cup predictions are usually presented as a single magic percentage. Matchday takes a more useful approach: it shows the forecast, explains the uncertainty, lets fans make their own calls, and keeps player context separate from the prediction model.
 
-**Matchday** is a data-aware World Cup intelligence app that brings together match forecasts, group standings, bracket scenarios, player snapshots, fan predictions, and an AI analyst into one interactive football experience.
+This is a fan experience, not a betting product and not a claim that football can be solved by an algorithm. The model gives probabilities; the tournament supplies the chaos.
 
-I built this because I wanted something that felt more alive than a static prediction table.
+## What you can do
 
-Most football prediction projects stop at a percentage:
+- **Dashboard** — See the next fixtures, live group context, model confidence, and the biggest decision edge.
+- **Match center** — Browse scheduled matches, make free fan picks, compare any two World Cup teams, and open a match guide.
+- **Group scenarios** — Follow all 12 group tables with every team present from the start.
+- **Scenario explorer** — Find the strongest favourite and the most balanced upcoming match.
+- **Tournament challenge** — Pick every remaining outcome and a champion. Earn fan points when results arrive; no money, no odds, no betting.
+- **Bracketology lab** — Build a possible route to the final from the live group picture.
+- **AI analyst** — Ask match-specific or tournament-wide questions, such as “Who is the title favourite?” or “Why is France favoured?”
+- **Player guide** — Browse team profiles, load squad snapshots with photos, and inspect available **2026 World Cup** player match-stat averages.
+- **Public leaderboard** — Register a nickname, make picks, and see how your calls compare with other fans.
 
-> Team A has a 54% chance.  
-> Team B has a 23% chance.  
-> Draw is 23%.
-
-But football is never just a number.
-
-A forecast should explain itself. A model should be honest about uncertainty. Fans should be able to disagree with it, make their own picks, explore possible routes to the final, and still enjoy the drama of the tournament. That is what Matchday tries to do.
-
-This project became more than just a technical build for me. I worked through API limitations, deployment issues, provider caching, player data inconsistencies, model design choices, and public hosting problems to make the app feel usable, transparent, and real.
-
-It is not perfect, but it is something I genuinely enjoyed building, breaking, fixing, and refining.
-
----
-
-## What Matchday Does
-
-- **Dashboard** — Shows upcoming fixtures, group context, model confidence, and the biggest decision edge.
-- **Match Center** — Browse matches, compare any two teams, make fan picks, and open a match guide.
-- **Group Scenarios** — Follow all 12 World Cup group tables.
-- **Scenario Explorer** — Identify the strongest favourite and the most balanced upcoming match.
-- **Tournament Challenge** — Pick remaining outcomes and a champion, then earn fan points as results arrive.
-- **Bracketology Lab** — Build a possible route to the final from the current tournament picture.
-- **AI Analyst** — Ask model-grounded questions like “Why is France favoured?” or “Who looks strongest so far?”
-- **Player Guide** — Browse team squads, player photos, and available 2026 World Cup match-stat averages.
-- **Public Leaderboard** — Register a nickname, make predictions, and compare your picks with other fans.
-
-This is a fan project, not a betting product. There are no odds, no money mechanics, and no attempt to pretend that football can be solved by an algorithm.
-
----
-
-## How the Prediction Model Works
+## How the prediction model works
 
 ```mermaid
 flowchart LR
@@ -68,78 +37,47 @@ flowchart LR
     G -. never changes .-> E
 ```
 
-The model uses a simple, explainable baseline:
+The model starts with team-level results:
 
-1. **Elo ratings** estimate team strength from completed results.
-2. The Elo gap is converted into expected goal values.
-3. A **Poisson model** turns expected goals into possible scorelines and win/draw/loss probabilities.
+1. **Elo ratings** represent relative team strength and update with completed results.
+2. The Elo gap helps generate each team’s **expected goals**.
+3. A **Poisson model** converts expected goals into plausible scorelines and home-win/draw/away-win probabilities.
 
-The goal is not to create a black-box oracle. The goal is to make the forecast understandable.
+Player data is deliberately separate. A brilliant player can enrich the conversation, but player ratings are never silently injected into the forecast. That keeps the baseline understandable and avoids pretending that a small collection of match ratings is a complete measure of a player.
 
-Player data is intentionally kept separate from the prediction model. A player profile can add useful context, but individual player ratings are not secretly injected into the match forecast. That keeps the model honest and easier to reason about.
-
----
-
-## Data Sources
+## Data sources
 
 | Data | Provider | How it is used |
 | --- | --- | --- |
-| Fixtures, results, and group data | football-data.org | Refreshes the World Cup schedule, completed results, and group context. |
-| Squad snapshots and player photos | API-Football | Loads team rosters and player images on demand. |
-| 2026 tournament player match stats | KickoffAPI | Displays available match-stat averages across completed 2026 World Cup appearances. |
-| AI explanations | OpenRouter or OpenAI | Generates short, cautious, model-grounded analyst responses. |
-| Public leaderboard | Supabase Postgres | Stores nicknames, predictions, and fan points. |
-| Hosting | Render | Hosts the public FastAPI application. |
+| Fixtures, results, group data | football-data.org | Refreshes the World Cup schedule and completed results. |
+| Squad snapshots and player photos | API-Football | Loaded on demand in Player Guide and cached. |
+| Current tournament player match stats | KickoffAPI | Averages available ratings and statistics across completed **2026 World Cup** appearances. |
+| Natural-language explanations | OpenRouter or OpenAI | Turns the supplied model output into a short, cautious explanation. |
+| Fan leaderboard | Supabase Postgres | Stores nicknames and prediction picks for the public leaderboard. |
 
----
+### A note on player ratings
 
-## A Note on Player Ratings
+Player ratings are only shown when the provider has a recorded 2026 tournament appearance. If a player has not played, or a rating is unavailable, Matchday says so rather than substituting a historical World Cup rating. These are match-stat ratings, not global player rankings.
 
-Player ratings are only shown when the provider has a recorded 2026 World Cup appearance for that player.
+## Run locally
 
-If a player has not played, or if match-stat data is unavailable, Matchday says so instead of inventing a rating or substituting historical data.
-
-These ratings are **not global player rankings**. They are match-stat averages from available 2026 tournament appearances.
-
-For the public Render deployment, KickoffAPI responses are cached so the Player Guide remains usable even when the live provider blocks or delays cloud-hosted requests. Cached player-stat data is used only for display and is never used inside the prediction model.
-
----
-
-## Tech Stack
-
-- **Backend:** FastAPI, Python
-- **Frontend:** Vanilla HTML, CSS, JavaScript
-- **Prediction Model:** Elo ratings + Poisson score probabilities
-- **Database:** Supabase Postgres
-- **AI Analyst:** OpenRouter or OpenAI
-- **Football Data:** football-data.org, API-Football, KickoffAPI
-- **Deployment:** Render
-
----
-
-## Run Locally
-
-### 1. Clone the Repository
+### 1. Clone and install
 
 ```bash
-git clone https://github.com/Bears-beets-battlestargalactica/matchday-world-cup-intelligence.git
+git clone https://github.com/YOUR-GITHUB-USERNAME/matchday-world-cup-intelligence.git
 cd matchday-world-cup-intelligence
-```
 
-### 2. Create a Virtual Environment and Install Dependencies
-
-```bash
 python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
 ```
 
-### 3. Create Your Environment File
+### 2. Create your environment file
 
 ```bash
 cp backend/.env.example .env
 ```
 
-Add the provider keys you want to use:
+Add the providers you want to use:
 
 ```env
 # Live fixtures and results
@@ -151,55 +89,46 @@ API_FOOTBALL_KEY=your_api_football_key
 # Current 2026 tournament player statistics and ratings
 KICKOFF_API_KEY=your_kickoff_key
 
-# AI analyst using OpenRouter
+# AI analyst — OpenRouter example
 LLM_PROVIDER=openrouter
 OPENROUTER_API_KEY=your_openrouter_key
 OPENROUTER_MODEL=openrouter/free
 
-# Persistent leaderboard
+# Persistent leaderboard (Supabase Postgres)
 DATABASE_URL=your_supabase_postgres_connection_string
 ```
 
-OpenAI is also supported if you prefer using it directly:
+`OPENAI_API_KEY` and `OPENAI_MODEL` are also supported if you prefer OpenAI directly instead of OpenRouter.
 
-```env
-OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=your_openai_model
-```
-
-### 4. Start the App
+### 3. Start the app
 
 ```bash
 .venv/bin/uvicorn backend.main:app --reload --port 8000
 ```
 
-Open:
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-```text
-http://127.0.0.1:8000
-```
+### 4. Refresh the fixture provider
 
-### 5. Refresh Fixture Data
+With `FOOTBALL_DATA_API_KEY` configured:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/refresh
 ```
 
----
-
-## Public API Endpoints
+## Useful API endpoints
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /api/health` | Checks provider configuration and app health. |
-| `GET /api/dashboard` | Dashboard data, standings, teams, and model metadata. |
-| `GET /api/schedule` | Upcoming fixtures and forecasts. |
-| `GET /api/groups` | World Cup group tables. |
-| `GET /api/tournament` | Tournament outlook, fan scoring, and fixture context. |
+| `GET /api/health` | Checks configured providers and application health. |
+| `GET /api/dashboard` | Dashboard matches, standings, teams, and model metadata. |
+| `GET /api/schedule` | Upcoming World Cup fixtures and forecasts. |
+| `GET /api/groups` | The 12 group tables. |
+| `GET /api/tournament` | Title outlook, fan-game scoring, and fixtures. |
 | `POST /api/predict` | Forecast any two team names. |
 | `POST /api/analyst` | Ask for a model-grounded explanation. |
-| `GET /api/team-roster` | Load squad snapshots and player photos. |
-| `GET /api/player-profile` | Load available 2026 player match-stat averages. |
+| `GET /api/team-roster` | On-demand squad snapshot and player photos. |
+| `GET /api/player-profile` | Current 2026 player aggregate, when available. |
 | `POST /api/refresh` | Refresh official fixture and result data. |
 
 Example prediction:
@@ -210,106 +139,64 @@ curl -X POST http://127.0.0.1:8000/api/predict \
   -d '{"home":"Brazil","away":"France"}'
 ```
 
-Check the public deployment:
-
-```bash
-curl https://matchday-world-cup-intelligence.onrender.com/api/health
-```
-
-Refresh public fixture data:
-
-```bash
-curl -X POST https://matchday-world-cup-intelligence.onrender.com/api/refresh
-```
-
----
-
 ## Deploy on Render
 
-This repository includes a `render.yaml` file for Render Blueprint deployment.
+The repository includes [render.yaml](render.yaml) for a Render Blueprint deployment.
 
-1. Push the repository to GitHub.
-2. In Render, choose **New + → Blueprint**.
-3. Select the GitHub repository.
-4. Add the required secret environment variables in Render:
+1. Push this folder to GitHub, with `render.yaml` at the repository root.
+2. In Render, choose **New + → Blueprint**, then select the GitHub repository.
+3. Add your secret environment variables in Render’s **Environment** panel:
 
-```text
-FOOTBALL_DATA_API_KEY
-API_FOOTBALL_KEY
-KICKOFF_API_KEY
-DATABASE_URL
-OPENROUTER_API_KEY
+   ```text
+   FOOTBALL_DATA_API_KEY
+   API_FOOTBALL_KEY
+   KICKOFF_API_KEY
+   DATABASE_URL
+   LLM_PROVIDER=openrouter
+   OPENROUTER_API_KEY
+   OPENROUTER_MODEL=openrouter/free
+   ```
+
+4. Deploy. Render will provide a public `onrender.com` URL.
+5. Check `https://YOUR-RENDER-URL/api/health` and make sure the required providers report `configured: true`.
+
+Never commit `.env`. It is ignored by Git on purpose. The public browser never receives the provider secrets.
+
+More detail: [DEPLOY_RENDER.md](DEPLOY_RENDER.md).
+
+## Screenshot checklist for GitHub
+
+For a strong portfolio README, take these screenshots at desktop width (around 1440px wide), with real provider data loaded and no browser chrome visible:
+
+| Filename | What to capture | Why it matters |
+| --- | --- | --- |
+| `01-dashboard.png` | Main dashboard with upcoming matches, live data badge, group standings, and AI analyst box. | The one image that sells the project instantly. |
+| `02-match-guide.png` | An opened match guide showing forecast, expected goals, recent form, and players to watch. | Demonstrates depth beyond a simple win percentage. |
+| `03-player-guide.png` | Player Guide with a squad loaded and one player’s 2026 rating/stat card open. | Proves the provider integration and transparent player-data treatment. |
+| `04-bracketology.png` | Bracketology lab after you have selected a few winners. | Shows the playful, interactive side. |
+| `05-leaderboard.png` | Fan leaderboard with a few test nicknames and points. | Shows that the project has a community feature and persistent data. |
+| `06-mobile.png` | A narrow mobile screenshot of the dashboard or Match Center. | Shows responsive polish. |
+
+Create a `docs/screenshots/` folder, save the images using those names, and then add them near the top of this README, for example:
+
+```md
+![Matchday dashboard](docs/screenshots/01-dashboard.png)
 ```
 
-The Blueprint already sets:
+Avoid screenshots containing API keys, database URLs, terminal output, your personal email address, or the Render environment screen.
 
-```text
-LLM_PROVIDER=openrouter
-OPENROUTER_MODEL=openrouter/free
-```
+## Roadmap ideas
 
-After deployment, Render provides a public URL like:
+- Email or magic-link accounts through Supabase Auth.
+- User profiles, friend leagues, and private prediction groups.
+- Automated periodic fixture refreshes.
+- More transparent bracket simulation for official third-place qualification rules.
+- Player availability and injury context from a verified provider, clearly separated from the baseline model.
+- Shareable match cards and “my bracket” images.
 
-```text
-https://matchday-world-cup-intelligence.onrender.com
-```
+## Built with
 
-Check health:
-
-```bash
-curl https://matchday-world-cup-intelligence.onrender.com/api/health
-```
-
-Refresh fixtures:
-
-```bash
-curl -X POST https://matchday-world-cup-intelligence.onrender.com/api/refresh
-```
-
-Never commit `.env`. Provider keys belong only in your local `.env` file or in Render’s secret environment variables.
-
----
-
-## What I Learned
-
-This project pushed me through the full cycle of building something that actually works outside my laptop.
-
-I had to work through:
-
-- designing an explainable prediction model,
-- combining multiple football data providers,
-- handling incomplete and inconsistent player data,
-- keeping model logic separate from contextual player information,
-- adding an AI analyst without letting it invent unsupported claims,
-- deploying a FastAPI app publicly,
-- connecting Supabase for persistence,
-- debugging Render environment variables,
-- dealing with API provider limits and Cloudflare blocking,
-- and adding cache fallbacks so the public demo still works reliably.
-
-A lot of the work was not glamorous. Some of it was just reading logs, fixing deployment issues, adjusting environment variables, testing endpoints, and trying again.
-
-But that is also what made the project feel real.
-
----
-
-## Roadmap
-
-Some improvements I would like to add next:
-
-- Supabase Auth with email or magic-link sign-in.
-- Friend leagues and private prediction groups.
-- Automated scheduled fixture refreshes.
-- More detailed bracket simulation logic.
-- Shareable match cards and bracket images.
-- Better player availability and injury context from verified sources.
-- More visible explanation of how confidence and uncertainty are calculated.
-
----
-
-## Built With
-
-FastAPI · Python · Elo ratings · Poisson distributions · vanilla HTML/CSS/JavaScript · football-data.org · API-Football · KickoffAPI · OpenRouter · Supabase · Render
+FastAPI · Python · Elo · Poisson distributions · vanilla HTML/CSS/JavaScript · football-data.org · API-Football · KickoffAPI · OpenRouter · Supabase · Render
 
 ---
 
