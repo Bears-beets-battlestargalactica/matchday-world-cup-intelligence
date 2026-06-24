@@ -1,0 +1,26 @@
+services:
+  - type: web
+    runtime: python
+    name: matchday-world-cup-intelligence
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: openrouter
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: openrouter/free
+      - key: FOOTBALL_DATA_API_KEY
+        sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: KICKOFF_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false

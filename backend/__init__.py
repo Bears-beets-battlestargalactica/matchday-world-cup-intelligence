@@ -1,0 +1,1 @@
+"""Matchday FastAPI backend package."""
