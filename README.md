@@ -3,7 +3,7 @@
 > A playful, data-aware World Cup companion: forecast matches, build a route to the final, inspect the groups, challenge your friends, and ask an AI analyst why the model leans one way.
 
 **Live Demo:** [https://matchday-world-cup-intelligence.onrender.com](https://matchday-world-cup-intelligence.onrender.com)
-**GitHub Repository:** [https://github.com/Bears-beets-battlestargalactica/matchday-world-cup-intelligence](https://github.com/Bears-beets-battlestargalactica/matchday-world-cup-intelligence)
+
 
 > The public demo is hosted on Render’s free tier, so the first request may take a little while to wake up after inactivity.
 
