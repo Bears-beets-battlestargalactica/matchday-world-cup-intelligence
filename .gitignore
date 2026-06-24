@@ -6,3 +6,5 @@ backend/matchday.db
 backend/api_football_cache.json
 backend/kickoff_cache.json
 .DS_Store
+
+!backend/kickoff_cache.json

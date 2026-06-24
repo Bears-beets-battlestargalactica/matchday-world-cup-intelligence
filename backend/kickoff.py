@@ -115,6 +115,13 @@ class KickoffProvider:
                 status_code,
                 body,
             )
+            if saved and isinstance(saved.get("payload"), dict):
+                logger.warning(
+                    "Using stale KickoffAPI cache for endpoint=%s params=%s after live fetch failed",
+                    endpoint,
+                    params,
+                )
+                return saved["payload"], True
             raise KickoffError("KickoffAPI could not be reached right now.") from error
         except (httpx.HTTPError, ValueError) as error:
             logger.exception(
@@ -123,6 +130,13 @@ class KickoffProvider:
                 params,
                 error,
             )
+            if saved and isinstance(saved.get("payload"), dict):
+                logger.warning(
+                    "Using stale KickoffAPI cache for endpoint=%s params=%s after live fetch failed",
+                    endpoint,
+                    params,
+                )
+                return saved["payload"], True
             raise KickoffError("KickoffAPI could not be reached right now.") from error
         if not isinstance(payload, dict) or payload.get("errors"):
             raise KickoffError("KickoffAPI did not return current tournament player data.")
