@@ -14,7 +14,7 @@ import time
 import unicodedata
 from pathlib import Path
 from urllib.parse import urlencode
-
+import logging
 import certifi
 import httpx
 
@@ -24,6 +24,7 @@ BASE_URL = "https://api.kickoffapi.com/api/v1"
 WORLD_CUP_LEAGUE_ID = 1
 CURRENT_WORLD_CUP_SEASON = 2026
 COMPLETE_STATUSES = {"FT", "AET", "PEN"}
+logger = logging.getLogger(__name__)
 TEAM_ALIASES = {
     "Cape Verde Islands": "Cape Verde",
     "Congo DR": "DR Congo",
@@ -104,7 +105,24 @@ class KickoffProvider:
             self.remaining_requests = response.headers.get("x-ratelimit-remaining")
             response.raise_for_status()
             payload = response.json()
+        except httpx.HTTPStatusError as error:
+            body = error.response.text[:800] if error.response is not None else ""
+            status_code = error.response.status_code if error.response is not None else None
+            logger.exception(
+                "KickoffAPI status error endpoint=%s params=%s status=%s body=%s",
+                endpoint,
+                params,
+                status_code,
+                body,
+            )
+            raise KickoffError("KickoffAPI could not be reached right now.") from error
         except (httpx.HTTPError, ValueError) as error:
+            logger.exception(
+                "KickoffAPI request/parsing error endpoint=%s params=%s error=%r",
+                endpoint,
+                params,
+                error,
+            )
             raise KickoffError("KickoffAPI could not be reached right now.") from error
         if not isinstance(payload, dict) or payload.get("errors"):
             raise KickoffError("KickoffAPI did not return current tournament player data.")
