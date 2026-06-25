@@ -145,6 +145,62 @@ def upcoming_fixtures() -> list:
 def fixture_prediction(fixture) -> dict:
     prediction = engine.predict(fixture.home, fixture.away).as_dict()
     return {**prediction, "kickoff": fixture.kickoff, "group": fixture.group}
+    
+def completed_group_fixtures() -> list:
+    return sorted(
+        (fixture for fixture in fixtures if is_group_fixture(fixture) and fixture.complete),
+        key=lambda fixture: fixture.kickoff or "",
+        reverse=True,
+    )
+
+
+def fixture_actual_outcome(fixture) -> str:
+    if fixture.home_goals == fixture.away_goals:
+        return "draw"
+    if fixture.home_goals > fixture.away_goals:
+        return "home"
+    return "away"
+
+
+def prediction_outcome(prediction: dict) -> str:
+    if prediction["home_win"] >= prediction["draw"] and prediction["home_win"] >= prediction["away_win"]:
+        return "home"
+    if prediction["away_win"] >= prediction["draw"]:
+        return "away"
+    return "draw"
+
+
+def backtested_fixture_prediction(fixture) -> dict:
+    prior_fixtures = [
+        item
+        for item in fixtures
+        if item.complete
+        and item.kickoff
+        and fixture.kickoff
+        and item.kickoff < fixture.kickoff
+    ]
+
+    backtest_engine = EloPoissonEngine(prior_fixtures) if prior_fixtures else engine
+    prediction = backtest_engine.predict(fixture.home, fixture.away).as_dict()
+
+    actual_outcome = fixture_actual_outcome(fixture)
+    predicted_outcome = prediction_outcome(prediction)
+
+    return {
+        **prediction,
+        "kickoff": fixture.kickoff,
+        "group": fixture.group,
+        "stage": fixture.stage,
+        "status": fixture.status,
+        "complete": True,
+        "actual_home_goals": fixture.home_goals,
+        "actual_away_goals": fixture.away_goals,
+        "actual_scoreline": f"{fixture.home_goals}-{fixture.away_goals}",
+        "actual_outcome": actual_outcome,
+        "predicted_outcome": predicted_outcome,
+        "model_correct": actual_outcome == predicted_outcome,
+        "prediction_type": "pre-match backtest",
+    }
 
 
 def title_outlook() -> dict:
@@ -244,10 +300,23 @@ def dashboard() -> dict:
 
 
 @app.get("/api/schedule")
-def schedule() -> dict:
-    """All future provider fixtures, enriched with the current model forecast."""
-    return {"matches": [fixture_prediction(fixture) for fixture in upcoming_fixtures()], "teams": tournament_teams()}
+def schedule(include_completed: bool = False) -> dict:
+    """Future fixtures by default; optionally include completed matches with honest backtested forecasts."""
+    upcoming = [fixture_prediction(fixture) for fixture in upcoming_fixtures()]
 
+    payload = {
+        "matches": upcoming,
+        "teams": tournament_teams(),
+    }
+
+    if include_completed:
+        payload["upcoming"] = upcoming
+        payload["completed"] = [
+            backtested_fixture_prediction(fixture)
+            for fixture in completed_group_fixtures()
+        ]
+
+    return payload
 
 @app.get("/api/groups")
 def groups() -> dict:
