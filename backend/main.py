@@ -155,6 +155,8 @@ def fixture_prediction(fixture) -> dict:
         "kickoff": fixture.kickoff,
         "group": fixture.group,
         "stage": fixture.stage,
+        "provider_id": getattr(fixture, "provider_id", None),
+        "matchday": getattr(fixture, "matchday", None),
     }    
 def completed_tournament_fixtures() -> list:
     return sorted(
@@ -248,6 +250,9 @@ def all_tournament_fixtures() -> list[dict]:
 
 
 def fixture_key(fixture) -> str:
+    provider_id = getattr(fixture, "provider_id", None)
+    if provider_id:
+        return str(provider_id)
     return f"{fixture.home}|{fixture.away}|{fixture.kickoff or ''}"
 
 
@@ -326,6 +331,131 @@ def schedule(include_completed: bool = False) -> dict:
         ]
 
     return payload
+
+
+
+KNOCKOUT_ROUNDS = [
+    ("LAST_32", "Round of 32", 16),
+    ("LAST_16", "Round of 16", 8),
+    ("QUARTER_FINALS", "Quarterfinals", 4),
+    ("SEMI_FINALS", "Semifinals", 2),
+    ("FINAL", "Final", 1),
+]
+
+KNOCKOUT_STAGE_ORDER = {
+    stage: index
+    for index, (stage, _, _) in enumerate(KNOCKOUT_ROUNDS)
+}
+
+KNOCKOUT_STAGE_LABELS = {stage: label for stage, label, _ in KNOCKOUT_ROUNDS}
+
+KNOCKOUT_STAGE_ALIASES = {
+    "LAST_32": "LAST_32",
+    "ROUND_OF_32": "LAST_32",
+    "R32": "LAST_32",
+    "LAST_16": "LAST_16",
+    "ROUND_OF_16": "LAST_16",
+    "R16": "LAST_16",
+    "QUARTER_FINALS": "QUARTER_FINALS",
+    "QUARTER_FINAL": "QUARTER_FINALS",
+    "QUARTERFINALS": "QUARTER_FINALS",
+    "SEMI_FINALS": "SEMI_FINALS",
+    "SEMI_FINAL": "SEMI_FINALS",
+    "SEMIFINALS": "SEMI_FINALS",
+    "FINAL": "FINAL",
+}
+
+
+def canonical_knockout_stage(stage) -> str | None:
+    if not stage:
+        return None
+    return KNOCKOUT_STAGE_ALIASES.get(str(stage).upper())
+
+
+def knockout_fixture_sort_key(fixture) -> tuple:
+    stage = canonical_knockout_stage(fixture.stage)
+
+    return (
+        KNOCKOUT_STAGE_ORDER.get(stage, 99),
+        getattr(fixture, "matchday", None) or getattr(fixture, "provider_id", None) or 999999,
+        fixture.kickoff or "9999-12-31T23:59:59Z",
+    )
+
+def knockout_winner(fixture) -> str | None:
+    if not fixture.complete:
+        return None
+    if fixture.home_goals is None or fixture.away_goals is None:
+        return None
+    if fixture.home_goals > fixture.away_goals:
+        return fixture.home
+    if fixture.away_goals > fixture.home_goals:
+        return fixture.away
+    return None
+
+
+def knockout_scoreline(fixture) -> str | None:
+    if fixture.home_goals is None or fixture.away_goals is None:
+        return None
+    return f"{fixture.home_goals}-{fixture.away_goals}"
+
+
+def knockout_fixture_row(fixture) -> dict:
+    stage = canonical_knockout_stage(fixture.stage)
+    winner = knockout_winner(fixture)
+
+    return {
+        "key": fixture_key(fixture),
+        "provider_id": getattr(fixture, "provider_id", None),
+        "matchday": getattr(fixture, "matchday", None),
+        "home": fixture.home,
+        "away": fixture.away,
+        "kickoff": fixture.kickoff,
+        "stage": stage,
+        "stage_label": KNOCKOUT_STAGE_LABELS.get(stage, "Knockout"),
+        "status": fixture.status,
+        "complete": bool(fixture.complete),
+        "locked": bool(winner),
+        "winner": winner,
+        "home_goals": fixture.home_goals,
+        "away_goals": fixture.away_goals,
+        "scoreline": knockout_scoreline(fixture),
+    }
+
+
+def knockout_fixtures() -> list:
+    return sorted(
+        (
+            fixture
+            for fixture in fixtures
+            if is_tournament_fixture(fixture)
+            and canonical_knockout_stage(fixture.stage)
+        ),
+        key=knockout_fixture_sort_key,
+    )
+
+
+@app.get("/api/bracket")
+def bracket() -> dict:
+    """Provider-backed knockout bracket.
+
+    Completed knockout matches are locked from actual results.
+    Future known fixtures are selectable by the user on the frontend.
+    Later unknown slots stay TBD until provider data or user picks fill them.
+    """
+    rounds = {
+        stage: {"stage": stage, "label": label, "target_matches": target, "matches": []}
+        for stage, label, target in KNOCKOUT_ROUNDS
+    }
+
+    for fixture in knockout_fixtures():
+        stage = canonical_knockout_stage(fixture.stage)
+        if stage in rounds:
+            rounds[stage]["matches"].append(knockout_fixture_row(fixture))
+
+    return {
+        "source": fixture_source,
+        "rounds": [rounds[stage] for stage, _, _ in KNOCKOUT_ROUNDS],
+    }
 
 @app.get("/api/groups")
 def groups() -> dict:

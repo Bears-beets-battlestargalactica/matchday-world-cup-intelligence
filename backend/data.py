@@ -27,7 +27,9 @@ class Fixture:
     group: str | None = None
     stage: str | None = None
     status: str | None = None
-
+    provider_id: int | None = None
+    matchday: int | None = None
+    
     @property
     def complete(self) -> bool:
         return self.status in {"FINISHED", "AWARDED"} or (
@@ -78,6 +80,8 @@ def fetch_world_cup() -> list[Fixture]:
                     group=match.get("group"),
                     stage=match.get("stage"),
                     status=match.get("status"),
+                    provider_id=match.get("id"),
+                    matchday=match.get("matchday"),
                 )
             )
     return fixtures
