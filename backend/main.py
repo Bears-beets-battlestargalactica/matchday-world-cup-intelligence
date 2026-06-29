@@ -125,7 +125,8 @@ def is_group_fixture(fixture) -> bool:
     return fixture.stage in (None, "GROUP_STAGE") and bool(
         fixture.group and (GROUP_CODE.fullmatch(fixture.group) or re.fullmatch(r"[A-L]", fixture.group))
     )
-
+def is_tournament_fixture(fixture) -> bool:
+    return bool(fixture.home and fixture.away)
 
 def group_codes() -> list[str]:
     return sorted({fixture.group for fixture in fixtures if is_group_fixture(fixture) and fixture.group})
@@ -137,22 +138,30 @@ def tournament_teams() -> list[str]:
 
 def upcoming_fixtures() -> list:
     return sorted(
-        (fixture for fixture in fixtures if is_group_fixture(fixture) and not fixture.complete and kickoff_is_future(fixture)),
+        (
+            fixture
+            for fixture in fixtures
+            if is_tournament_fixture(fixture)
+            and not fixture.complete
+            and kickoff_is_future(fixture)
+        ),
         key=lambda fixture: fixture.kickoff or "9999-12-31T23:59:59Z",
     )
 
-
 def fixture_prediction(fixture) -> dict:
     prediction = engine.predict(fixture.home, fixture.away).as_dict()
-    return {**prediction, "kickoff": fixture.kickoff, "group": fixture.group}
-    
-def completed_group_fixtures() -> list:
+    return {
+        **prediction,
+        "kickoff": fixture.kickoff,
+        "group": fixture.group,
+        "stage": fixture.stage,
+    }    
+def completed_tournament_fixtures() -> list:
     return sorted(
-        (fixture for fixture in fixtures if is_group_fixture(fixture) and fixture.complete),
+        (fixture for fixture in fixtures if is_tournament_fixture(fixture) and fixture.complete),
         key=lambda fixture: fixture.kickoff or "",
         reverse=True,
     )
-
 
 def fixture_actual_outcome(fixture) -> str:
     if fixture.home_goals == fixture.away_goals:
@@ -313,7 +322,7 @@ def schedule(include_completed: bool = False) -> dict:
         payload["upcoming"] = upcoming
         payload["completed"] = [
             backtested_fixture_prediction(fixture)
-            for fixture in completed_group_fixtures()
+            for fixture in completed_tournament_fixtures()
         ]
 
     return payload
