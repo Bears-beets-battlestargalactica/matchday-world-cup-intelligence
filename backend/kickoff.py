@@ -31,6 +31,9 @@ TEAM_ALIASES = {
     "Ivory Coast": "Côte d'Ivoire",
     "South Korea": "Korea Republic",
     "Turkey": "Türkiye",
+    "United States": "USA",
+    "USA": "United States",
+    "United States of America": "United States",
 }
 
 
@@ -148,11 +151,22 @@ class KickoffProvider:
         teams_payload, cached = self._get(
             "/teams", {"league": WORLD_CUP_LEAGUE_ID, "season": CURRENT_WORLD_CUP_SEASON}, ttl_seconds=43_200
         )
-        desired = _normalise(TEAM_ALIASES.get(team_name, team_name))
+        requested = team_name.strip()
+        candidate_names = {requested, TEAM_ALIASES.get(requested, requested)}
+
+        # Include reverse aliases too, so "United States" can match "USA" and vice versa.
+        requested_key = requested.casefold()
+        for source, target in TEAM_ALIASES.items():
+            if requested_key in {source.casefold(), target.casefold()}:
+                candidate_names.add(source)
+                candidate_names.add(target)
+
+        desired = {_normalise(name) for name in candidate_names if name}
         rows = teams_payload.get("response", [])
-        selected = next((row for row in rows if _normalise(row.get("name", "")) == desired), None)
+        selected = next((row for row in rows if _normalise(row.get("name", "")) in desired), None)
         if not selected:
-            raise KickoffError(f"KickoffAPI has no 2026 World Cup team match for {team_name}.")
+            choices = ", ".join(sorted(candidate_names))
+            raise KickoffError(f"KickoffAPI has no 2026 World Cup team match for {team_name}. Tried: {choices}.")
         return int(selected["id"]), str(selected.get("name") or team_name), cached
 
     def player_profile(self, team_name: str, player_name: str, player: dict) -> dict:
@@ -178,11 +192,16 @@ class KickoffProvider:
         ratings: list[float] = []
         accuracies: list[float] = []
         cached = teams_cached and fixtures_cached
+        skipped_stat_feeds = 0
         for fixture in completed:
             fixture_id = fixture.get("id")
             if not fixture_id:
                 continue
-            stats_payload, stats_cached = self._get(f"/fixtures/{fixture_id}/players", ttl_seconds=3_600)
+            try:
+                stats_payload, stats_cached = self._get(f"/fixtures/{fixture_id}/players", ttl_seconds=3_600)
+            except KickoffError:
+                skipped_stat_feeds += 1
+                continue
             cached = cached and stats_cached
             entries = [
                 row for row in stats_payload.get("response", [])
@@ -211,13 +230,20 @@ class KickoffProvider:
                     pass
         fixture_context = {"competition": "World Cup 2026", "matches": len(completed), "team": provider_team}
         if not totals["appearances"]:
+            skipped_note = (
+                f" Player-stat feeds were unavailable for {skipped_stat_feeds} completed fixture(s)."
+                if skipped_stat_feeds else ""
+            )
             return {
                 "player": player,
                 "fixture": fixture_context,
                 "statistics": None,
                 "coverage": {"available": True, "season": CURRENT_WORLD_CUP_SEASON},
                 "cached": cached,
-                "rating_note": "KickoffAPI has no recorded 2026 World Cup appearance for this player yet.",
+                "rating_note": (
+                    "KickoffAPI has no recorded 2026 World Cup appearance for this player yet."
+                    + skipped_note
+                ),
             }
         return {
             "player": player,
