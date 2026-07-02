@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from .data import fetch_world_cup, seed_matches
 from .api_football import ApiFootballError, ApiFootballProvider
+from .sofascore_provider import SofaScoreError, SofaScoreProvider
 from .kickoff import KickoffError, KickoffProvider
 from .leaderboard import LeaderboardStore, LeaderboardUnavailable, NicknameTaken
 from .model import EloPoissonEngine
@@ -46,6 +47,7 @@ def load_active_fixtures() -> tuple[list, str]:
 fixtures, fixture_source = load_active_fixtures()
 engine = EloPoissonEngine(fixtures)
 api_football = ApiFootballProvider()
+sofascore = SofaScoreProvider()
 kickoff = KickoffProvider()
 leaderboard_store = LeaderboardStore(DATABASE_PATH)
 
@@ -181,6 +183,52 @@ def prediction_outcome(prediction: dict) -> str:
     return "draw"
 
 
+def scoreline_outcome(scoreline: str | None) -> str | None:
+    """Convert a predicted scoreline like 1-1 or 1–1 into home/draw/away."""
+    if not scoreline:
+        return None
+    numbers = re.findall(r"\d+", str(scoreline))
+    if len(numbers) < 2:
+        return None
+    home_goals, away_goals = int(numbers[0]), int(numbers[1])
+    if home_goals == away_goals:
+        return "draw"
+    return "home" if home_goals > away_goals else "away"
+
+
+def is_knockout_result_fixture(fixture) -> bool:
+    stage = str(fixture.stage or "").upper()
+    return bool(stage and stage not in {"GROUP_STAGE", "NONE"})
+
+
+def team_lean_outcome(prediction: dict) -> str:
+    """For knockout advancement, ignore draw and choose the stronger team lean."""
+    return "home" if prediction["home_win"] >= prediction["away_win"] else "away"
+
+
+def model_guess_outcome(fixture, prediction: dict) -> str:
+    """Outcome-level grading rule for completed-match backtests.
+
+    Normal matches: use the predicted scoreline outcome.
+    Knockout matches: if the predicted scoreline is a draw, fall back to the team lean
+    because someone must advance.
+    """
+    scoreline_call = scoreline_outcome(prediction.get("scoreline"))
+    probability_call = prediction_outcome(prediction)
+
+    if is_knockout_result_fixture(fixture) and scoreline_call == "draw":
+        return team_lean_outcome(prediction)
+
+    return scoreline_call or probability_call
+
+
+def prediction_evaluation_rule(fixture, prediction: dict) -> str:
+    scoreline_call = scoreline_outcome(prediction.get("scoreline"))
+    if is_knockout_result_fixture(fixture) and scoreline_call == "draw":
+        return "knockout_draw_scoreline_uses_team_lean"
+    return "scoreline_outcome"
+
+
 def backtested_fixture_prediction(fixture) -> dict:
     prior_fixtures = [
         item
@@ -195,7 +243,9 @@ def backtested_fixture_prediction(fixture) -> dict:
     prediction = backtest_engine.predict(fixture.home, fixture.away).as_dict()
 
     actual_outcome = fixture_actual_outcome(fixture)
-    predicted_outcome = prediction_outcome(prediction)
+    predicted_scoreline_outcome = scoreline_outcome(prediction.get("scoreline"))
+    model_lean_outcome = prediction_outcome(prediction)
+    predicted_outcome = model_guess_outcome(fixture, prediction)
 
     return {
         **prediction,
@@ -208,9 +258,29 @@ def backtested_fixture_prediction(fixture) -> dict:
         "actual_away_goals": fixture.away_goals,
         "actual_scoreline": f"{fixture.home_goals}-{fixture.away_goals}",
         "actual_outcome": actual_outcome,
+        "predicted_scoreline_outcome": predicted_scoreline_outcome,
+        "model_lean_outcome": model_lean_outcome,
         "predicted_outcome": predicted_outcome,
         "model_correct": actual_outcome == predicted_outcome,
+        "prediction_evaluation_rule": prediction_evaluation_rule(fixture, prediction),
         "prediction_type": "pre-match backtest",
+    }
+
+
+def completed_model_record(completed: list[dict]) -> dict:
+    graded = [
+        match for match in completed
+        if match.get("actual_outcome") and match.get("predicted_outcome")
+    ]
+    total = len(graded)
+    correct = sum(1 for match in graded if match.get("model_correct"))
+
+    return {
+        "total": total,
+        "correct": correct,
+        "incorrect": total - correct,
+        "accuracy": round((correct / total) * 100, 1) if total else 0,
+        "rule": "Normal matches are graded by predicted scoreline outcome. Knockout matches with a predicted draw scoreline fall back to the team lean because someone must advance.",
     }
 
 
@@ -301,6 +371,7 @@ def health() -> dict:
         "provider_configured": bool(os.getenv("FOOTBALL_DATA_API_KEY")),
         "fixture_source": fixture_source,
         "api_football": api_football.status(),
+        "sofascore": sofascore.status(),
         "kickoff": kickoff.status(),
         "leaderboard": leaderboard_store.status(),
         "llm_configured": llm_configured(),
@@ -324,11 +395,13 @@ def schedule(include_completed: bool = False) -> dict:
     }
 
     if include_completed:
-        payload["upcoming"] = upcoming
-        payload["completed"] = [
+        completed = [
             backtested_fixture_prediction(fixture)
             for fixture in completed_tournament_fixtures()
         ]
+        payload["upcoming"] = upcoming
+        payload["completed"] = completed
+        payload["model_record"] = completed_model_record(completed)
 
     return payload
 
@@ -504,16 +577,71 @@ def teams() -> dict:
 
 
 @app.get("/api/team-roster")
-def team_roster(team: str) -> dict:
-    """Load one verified squad at a time, with a persistent quota-saving cache."""
-    if not team.strip():
+def team_roster(team: str, provider: str = "auto") -> dict:
+    """Load one verified squad at a time, with provider fallback.
+
+    provider=auto uses API-Football first, then cached SofaScore.
+    provider=api_football forces API-Football.
+    provider=sofascore forces cached SofaScore.
+    """
+    team_name = team.strip()
+    if not team_name:
         raise HTTPException(status_code=422, detail="Choose a team.")
-    if not api_football.configured:
-        raise HTTPException(status_code=503, detail="API-Football is not configured.")
-    try:
-        return api_football.roster(team.strip())
-    except ApiFootballError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    requested_provider = provider.strip().lower().replace("-", "_")
+
+    if requested_provider not in {"auto", "api_football", "sofascore"}:
+        raise HTTPException(
+            status_code=422,
+            detail="provider must be one of: auto, api_football, sofascore",
+        )
+
+    api_error = None
+    sofascore_error = None
+
+    if requested_provider in {"auto", "api_football"}:
+        if api_football.configured:
+            try:
+                roster = api_football.roster(team_name)
+                roster["provider"] = "API-Football"
+                return roster
+            except ApiFootballError as error:
+                api_error = str(error)
+        else:
+            api_error = "not configured"
+
+        if requested_provider == "api_football":
+            raise HTTPException(
+                status_code=502,
+                detail=f"API-Football roster unavailable: {api_error}",
+            )
+
+    if requested_provider in {"auto", "sofascore"}:
+        if sofascore.configured:
+            try:
+                roster = sofascore.roster(team_name)
+                if api_error:
+                    roster["fallback_reason"] = api_error
+                return roster
+            except SofaScoreError as error:
+                sofascore_error = str(error)
+        else:
+            sofascore_error = "not configured"
+
+        if requested_provider == "sofascore":
+            raise HTTPException(
+                status_code=502,
+                detail=f"SofaScore cached roster unavailable: {sofascore_error}",
+            )
+
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "No roster provider is available. "
+            f"API-Football: {api_error or 'not tried'}. "
+            f"SofaScore cache: {sofascore_error or 'not tried'}."
+        ),
+    )
 
 
 @app.get("/api/player-profile")
