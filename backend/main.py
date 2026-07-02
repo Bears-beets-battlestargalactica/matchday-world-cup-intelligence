@@ -696,22 +696,61 @@ def team_roster(team: str, provider: str = "auto") -> dict:
 
 
 @app.get("/api/player-profile")
-def player_profile(team: str, player_id: int) -> dict:
-    """Click-to-load 2026 tournament match statistics and average rating."""
-    if not team.strip() or player_id <= 0:
+def player_profile(team: str, player_id: int | None = None, player_name: str | None = None) -> dict:
+    """Click-to-load 2026 tournament match statistics and average rating.
+
+    Static roster and TheSportsDB players do not have API-Football IDs, so the
+    preferred path is team + player_name through KickoffAPI. API-Football IDs are
+    still accepted when available.
+    """
+    team_name = team.strip()
+    requested_name = (player_name or "").strip()
+    numeric_player_id = int(player_id or 0)
+
+    if not team_name or (numeric_player_id <= 0 and not requested_name):
         raise HTTPException(status_code=422, detail="Choose a valid team and player.")
-    if not api_football.configured:
-        raise HTTPException(status_code=503, detail="API-Football is not configured.")
-    try:
-        if kickoff.configured:
-            roster = api_football.roster(team.strip())
-            player = next((item for item in roster["players"] if item.get("id") == player_id), None)
-            if not player:
-                raise ApiFootballError("That player is not in the provider squad snapshot.")
-            return kickoff.player_profile(team.strip(), str(player.get("name") or ""), player)
-        return api_football.player_profile(team.strip(), player_id)
-    except (ApiFootballError, KickoffError) as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    player = {
+        "id": numeric_player_id if numeric_player_id > 0 else None,
+        "name": requested_name,
+        "position": "Player",
+        "photo": None,
+    }
+
+    api_error = None
+
+    # If the caller only supplied an API-Football ID, try to recover the name
+    # from the roster snapshot. If API-Football is suspended, we can still use
+    # player_name when the frontend provides it.
+    if numeric_player_id > 0 and not requested_name and api_football.configured:
+        try:
+            roster = api_football.roster(team_name)
+            matched = next((item for item in roster["players"] if item.get("id") == numeric_player_id), None)
+            if matched:
+                player = matched
+                requested_name = str(matched.get("name") or "").strip()
+        except ApiFootballError as error:
+            api_error = str(error)
+
+    if kickoff.configured and requested_name:
+        try:
+            player["name"] = requested_name
+            return kickoff.player_profile(team_name, requested_name, player)
+        except KickoffError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    # Legacy fallback: only possible when API-Football is configured and the
+    # caller supplied a real API-Football player ID.
+    if api_football.configured and numeric_player_id > 0:
+        try:
+            return api_football.player_profile(team_name, numeric_player_id)
+        except ApiFootballError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    if api_error:
+        raise HTTPException(status_code=502, detail=api_error)
+
+    raise HTTPException(status_code=503, detail="KickoffAPI could not resolve this player by name.")
 
 
 @app.get("/api/match-detail")
