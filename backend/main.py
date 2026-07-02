@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 from .data import fetch_world_cup, seed_matches
 from .api_football import ApiFootballError, ApiFootballProvider
 from .sofascore_provider import SofaScoreError, SofaScoreProvider
+from .thesportsdb_provider import TheSportsDBError, TheSportsDBProvider
+from .static_rosters_provider import StaticRosterError, StaticRosterProvider
 from .kickoff import KickoffError, KickoffProvider
 from .leaderboard import LeaderboardStore, LeaderboardUnavailable, NicknameTaken
 from .model import EloPoissonEngine
@@ -47,6 +49,8 @@ def load_active_fixtures() -> tuple[list, str]:
 fixtures, fixture_source = load_active_fixtures()
 engine = EloPoissonEngine(fixtures)
 api_football = ApiFootballProvider()
+static_rosters = StaticRosterProvider()
+thesportsdb = TheSportsDBProvider()
 sofascore = SofaScoreProvider()
 kickoff = KickoffProvider()
 leaderboard_store = LeaderboardStore(DATABASE_PATH)
@@ -371,6 +375,8 @@ def health() -> dict:
         "provider_configured": bool(os.getenv("FOOTBALL_DATA_API_KEY")),
         "fixture_source": fixture_source,
         "api_football": api_football.status(),
+        "static_rosters": static_rosters.status(),
+        "thesportsdb": thesportsdb.status(),
         "sofascore": sofascore.status(),
         "kickoff": kickoff.status(),
         "leaderboard": leaderboard_store.status(),
@@ -580,9 +586,8 @@ def teams() -> dict:
 def team_roster(team: str, provider: str = "auto") -> dict:
     """Load one verified squad at a time, with provider fallback.
 
-    provider=auto uses API-Football first, then cached SofaScore.
-    provider=api_football forces API-Football.
-    provider=sofascore forces cached SofaScore.
+    provider=auto uses API-Football first, then static roster snapshots,
+    then TheSportsDB, then cached SofaScore.
     """
     team_name = team.strip()
     if not team_name:
@@ -590,13 +595,15 @@ def team_roster(team: str, provider: str = "auto") -> dict:
 
     requested_provider = provider.strip().lower().replace("-", "_")
 
-    if requested_provider not in {"auto", "api_football", "sofascore"}:
+    if requested_provider not in {"auto", "api_football", "static", "static_rosters", "thesportsdb", "sofascore"}:
         raise HTTPException(
             status_code=422,
-            detail="provider must be one of: auto, api_football, sofascore",
+            detail="provider must be one of: auto, api_football, static, thesportsdb, sofascore",
         )
 
     api_error = None
+    static_error = None
+    thesportsdb_error = None
     sofascore_error = None
 
     if requested_provider in {"auto", "api_football"}:
@@ -616,12 +623,54 @@ def team_roster(team: str, provider: str = "auto") -> dict:
                 detail=f"API-Football roster unavailable: {api_error}",
             )
 
+    if requested_provider in {"auto", "static", "static_rosters"}:
+        if static_rosters.configured:
+            try:
+                roster = static_rosters.roster(team_name)
+                if api_error:
+                    roster["fallback_reason"] = api_error
+                return roster
+            except StaticRosterError as error:
+                static_error = str(error)
+        else:
+            static_error = "not configured"
+
+        if requested_provider in {"static", "static_rosters"}:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Static roster unavailable: {static_error}",
+            )
+
+    if requested_provider in {"auto", "thesportsdb"}:
+        if thesportsdb.configured:
+            try:
+                roster = thesportsdb.roster(team_name)
+                if api_error:
+                    roster["fallback_reason"] = api_error
+                if static_error:
+                    roster["secondary_fallback_reason"] = static_error
+                return roster
+            except TheSportsDBError as error:
+                thesportsdb_error = str(error)
+        else:
+            thesportsdb_error = "not configured"
+
+        if requested_provider == "thesportsdb":
+            raise HTTPException(
+                status_code=502,
+                detail=f"TheSportsDB roster unavailable: {thesportsdb_error}",
+            )
+
     if requested_provider in {"auto", "sofascore"}:
         if sofascore.configured:
             try:
                 roster = sofascore.roster(team_name)
                 if api_error:
                     roster["fallback_reason"] = api_error
+                if static_error:
+                    roster["secondary_fallback_reason"] = static_error
+                if thesportsdb_error:
+                    roster["tertiary_fallback_reason"] = thesportsdb_error
                 return roster
             except SofaScoreError as error:
                 sofascore_error = str(error)
@@ -639,6 +688,8 @@ def team_roster(team: str, provider: str = "auto") -> dict:
         detail=(
             "No roster provider is available. "
             f"API-Football: {api_error or 'not tried'}. "
+            f"Static roster: {static_error or 'not tried'}. "
+            f"TheSportsDB: {thesportsdb_error or 'not tried'}. "
             f"SofaScore cache: {sofascore_error or 'not tried'}."
         ),
     )

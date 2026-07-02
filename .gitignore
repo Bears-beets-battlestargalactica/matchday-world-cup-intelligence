@@ -8,3 +8,9 @@ backend/kickoff_cache.json
 .DS_Store
 
 !backend/kickoff_cache.json
+
+# Provider runtime caches
+backend/thesportsdb_cache/players/*.json
+!backend/thesportsdb_cache/players/.gitkeep
+backend/sofascore_cache/rosters/*.json
+!backend/sofascore_cache/rosters/.gitkeep
