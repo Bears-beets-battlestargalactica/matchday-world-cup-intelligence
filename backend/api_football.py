@@ -63,13 +63,29 @@ class ApiFootballProvider:
             # Caching is a quota-saving optimisation, not a reason to fail a page.
             pass
 
+    @staticmethod
+    def _provider_error_message(payload: dict) -> str:
+        errors = payload.get("errors")
+        if not errors:
+            return ""
+        if isinstance(errors, dict):
+            parts = []
+            for key, value in errors.items():
+                if isinstance(value, list):
+                    value = ", ".join(str(item) for item in value)
+                parts.append(f"{key}: {value}")
+            return "; ".join(parts)
+        return str(errors)
+
     def _get(self, endpoint: str, params: dict[str, str | int], ttl_seconds: int = 43_200) -> tuple[dict, bool]:
         if not self.configured:
             raise ApiFootballError("API-Football is not configured.")
+
         cache_key = f"{endpoint}?{urlencode(sorted(params.items()))}"
         cache = self._read_cache()
         saved = cache.get(cache_key)
         now = time.time()
+
         if saved and now - saved.get("saved_at", 0) < ttl_seconds:
             return saved["payload"], True
 
@@ -85,59 +101,108 @@ class ApiFootballProvider:
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as error:
+            if saved and isinstance(saved.get("payload"), dict):
+                return saved["payload"], True
             raise ApiFootballError("API-Football could not be reached right now.") from error
 
-        if payload.get("errors"):
-            if any(key in payload["errors"] for key in ("plan", "season")):
-                raise ApiFootballCoverageUnavailable("Current-season player statistics are not included in this API-Football plan.")
-            raise ApiFootballError("API-Football did not return roster data for this team.")
+        errors = payload.get("errors")
+        if errors:
+            if saved and isinstance(saved.get("payload"), dict):
+                return saved["payload"], True
+
+            message = self._provider_error_message(payload)
+            if isinstance(errors, dict) and any(key in errors for key in ("plan", "season")):
+                raise ApiFootballCoverageUnavailable(
+                    "Current-season player statistics are not included in this API-Football plan."
+                )
+            raise ApiFootballError(f"API-Football returned an error: {message or 'unknown provider error.'}")
+
         cache[cache_key] = {"saved_at": now, "payload": payload}
         self._write_cache(cache)
         return payload, False
 
     @staticmethod
-    def _pick_team(response: list[dict], requested_name: str) -> dict | None:
+    def _team_candidates(response: list[dict], requested_name: str) -> list[dict]:
         desired = TEAM_ALIASES.get(requested_name, requested_name).casefold()
         national = [row for row in response if row.get("team", {}).get("national")]
         candidates = national or response
-        for row in candidates:
-            if row.get("team", {}).get("name", "").casefold() == desired:
-                return row
+
+        exact = [
+            row for row in candidates
+            if row.get("team", {}).get("name", "").casefold() == desired
+        ]
+        rest = [row for row in candidates if row not in exact]
+        return exact + rest
+
+    @staticmethod
+    def _pick_team(response: list[dict], requested_name: str) -> dict | None:
+        candidates = ApiFootballProvider._team_candidates(response, requested_name)
         return candidates[0] if candidates else None
 
     def roster(self, team_name: str) -> dict:
         search_name = TEAM_ALIASES.get(team_name, team_name)
         teams_payload, team_cached = self._get("/teams", {"search": search_name})
-        selected = self._pick_team(teams_payload.get("response", []), team_name)
-        if not selected:
+        candidates = self._team_candidates(teams_payload.get("response", []), team_name)
+
+        if not candidates:
             raise ApiFootballError("No API-Football national-team roster was found for this team.")
 
-        provider_team = selected["team"]
-        roster_payload, roster_cached = self._get("/players/squads", {"team": provider_team["id"]})
-        squads = roster_payload.get("response", [])
-        squad = next((row for row in squads if row.get("team", {}).get("id") == provider_team["id"]), squads[0] if squads else {})
-        players = []
-        for row in squad.get("players", []):
-            players.append(
-                {
-                    "id": row.get("id"),
-                    "name": row.get("name"),
-                    "age": row.get("age"),
-                    "number": row.get("number"),
-                    "position": row.get("position"),
-                    "photo": row.get("photo"),
-                    "rating": None,
-                }
+        last_error: Exception | None = None
+        last_provider_team = None
+
+        for selected in candidates[:8]:
+            provider_team = selected.get("team", {})
+            provider_team_id = provider_team.get("id")
+            provider_team_name = provider_team.get("name") or team_name
+            last_provider_team = f"{provider_team_name} (id {provider_team_id})"
+
+            if not provider_team_id:
+                continue
+
+            try:
+                roster_payload, roster_cached = self._get("/players/squads", {"team": provider_team_id})
+            except ApiFootballError as error:
+                last_error = error
+                continue
+
+            squads = roster_payload.get("response", [])
+            squad = next(
+                (row for row in squads if row.get("team", {}).get("id") == provider_team_id),
+                squads[0] if squads else {},
             )
-        return {
-            "team": team_name,
-            "provider_team": provider_team.get("name"),
-            "provider_team_id": provider_team.get("id"),
-            "logo": provider_team.get("logo"),
-            "players": players,
-            "cached": team_cached and roster_cached,
-            "rating_note": "This is an API-Football squad snapshot, not a confirmed 2026 final roster. Current 2026 match ratings are shown only when the configured provider plan includes that season; they are never used by this prediction model.",
-        }
+
+            players = []
+            for row in squad.get("players", []):
+                if not row.get("id") or not row.get("name"):
+                    continue
+                players.append(
+                    {
+                        "id": row.get("id"),
+                        "name": row.get("name"),
+                        "age": row.get("age"),
+                        "number": row.get("number"),
+                        "position": row.get("position"),
+                        "photo": row.get("photo"),
+                        "rating": None,
+                    }
+                )
+
+            if players:
+                return {
+                    "team": team_name,
+                    "provider_team": provider_team.get("name"),
+                    "provider_team_id": provider_team.get("id"),
+                    "logo": provider_team.get("logo"),
+                    "players": players,
+                    "cached": team_cached and roster_cached,
+                    "rating_note": "This is an API-Football squad snapshot, not a confirmed 2026 final roster. Current 2026 match ratings are shown only when the configured provider plan includes that season; they are never used by this prediction model.",
+                }
+
+            last_error = ApiFootballError(f"No squad players were listed for {last_provider_team}.")
+
+        detail = f" Last provider team tried: {last_provider_team}." if last_provider_team else ""
+        cause = f" Provider said: {last_error}" if last_error else ""
+        raise ApiFootballError(f"API-Football did not return roster data for {team_name}.{detail}{cause}")
 
     def player_profile(self, team_name: str, player_id: int) -> dict:
         """Aggregate a player's 2026 World Cup match statistics, on demand."""
